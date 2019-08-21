@@ -14,6 +14,10 @@ if (window.CefSharp) {
 		location = 'https://github.com/pypy-vrc/vrcx';
 	}).then(() => {
 
+		var $nameColorStyle = document.createElement('style');
+		$nameColorStyle.appendChild(document.createTextNode('.x-friend-item>.detail>.name { color: #303133 !important; }'));
+		document.head.appendChild($nameColorStyle);
+
 		document.addEventListener('keyup', (e) => {
 			if (e.ctrlKey) {
 				if (e.shiftKey && e.code === 'KeyI') {
@@ -947,6 +951,7 @@ if (window.CefSharp) {
 					admin_: false,
 					troll_: false,
 					trustLevel_: 'Visitor',
+					trustClass_: 'x-tag-untrusted',
 					//
 					...ref
 				};
@@ -959,21 +964,35 @@ if (window.CefSharp) {
 				ctx.admin_ = ctx.admin_ || ctx.tags.includes('admin_moderator');
 				ctx.troll_ = ctx.tags.includes('system_probable_troll') ||
 					ctx.tags.includes('system_troll');
-				if (ctx.tags.includes('system_legend')) {
+				if (ctx.troll_) {
+					ctx.trustLevel_ = 'Nuisance';
+					ctx.trustClass_ = 'x-tag-troll';
+				} else if (ctx.tags.includes('system_legend')) {
 					ctx.trustLevel_ = 'Legendary User';
+					ctx.trustClass_ = 'x-tag-legendary';
 				} else if (ctx.tags.includes('system_trust_legend')) {
 					ctx.trustLevel_ = 'Veteran User';
+					ctx.trustClass_ = 'x-tag-legend';
 				} else if (ctx.tags.includes('system_trust_veteran')) {
 					ctx.trustLevel_ = 'Trusted User';
+					ctx.trustClass_ = 'x-tag-veteran';
 				} else if (ctx.tags.includes('system_trust_trusted')) {
 					ctx.trustLevel_ = 'Known User';
+					ctx.trustClass_ = 'x-tag-trusted';
 				} else if (ctx.tags.includes('system_trust_known')) {
 					ctx.trustLevel_ = 'User';
+					ctx.trustClass_ = 'x-tag-known';
 				} else if (ctx.tags.includes('system_trust_basic')) {
 					ctx.trustLevel_ = 'New User';
+					ctx.trustClass_ = 'x-tag-basic';
 				} else {
 					ctx.trustLevel_ = 'Visitor';
+					ctx.trustClass_ = 'x-tag-untrusted';
 				}
+			}
+			if (ctx.admin_) {
+				ctx.trustLevel_ = 'VRChat Team';
+				ctx.trustClass_ = 'x-tag-vip';
 			}
 			return ctx;
 		};
@@ -4479,7 +4498,7 @@ if (window.CefSharp) {
 					this.sweepGameLog();
 					// sweepGameLog로 기록이 삭제되면
 					// 아무 것도 없는데 알림이 떠서 이상함
-					if (this.gameLogTable.length) {
+					if (this.gameLogTable.data.length) {
 						this.notifyMenu('gameLog');
 					}
 				}
@@ -4948,8 +4967,8 @@ if (window.CefSharp) {
 				confirmButtonText: 'Confirm',
 				cancelButtonText: 'Cancel',
 				type: 'info',
-				callback: (action2) => {
-					if (action2 === 'confirm') {
+				callback: (action) => {
+					if (action === 'confirm') {
 						API.clearFavoriteGroup({
 							type: ctx.type,
 							group: ctx.name
@@ -5097,9 +5116,14 @@ if (window.CefSharp) {
 			} else {
 				this.friendLog = {};
 				ref.friends.forEach((id) => {
-					this.friendLog[id] = {
+					var ctx = {
 						id
 					};
+					var user = API.user[id];
+					if (user) {
+						ctx.displayName = user.displayName;
+					}
+					this.friendLog[id] = ctx;
 				});
 				this.friendLogTable.data = [];
 				this.saveFriendLog();
@@ -5432,6 +5456,12 @@ if (window.CefSharp) {
 		};
 		$app.watch.openVR = saveOpenVROption;
 		$app.watch.openVRAlways = saveOpenVROption;
+		$app.data.showNameColor = VRCXStorage.GetBool('showNameColor');
+		$nameColorStyle.disabled = VRCXStorage.GetBool('showNameColor');
+		$app.watch.showNameColor = function () {
+			VRCXStorage.SetBool('showNameColor', this.showNameColor);
+			$nameColorStyle.disabled = this.showNameColor;
+		};
 
 		API.$on('LOGIN', () => {
 			$app.currentUserTreeData = [];
@@ -5498,7 +5528,7 @@ if (window.CefSharp) {
 		$app.methods.promptUserDialog = function () {
 			this.$prompt('Enter a User ID (UUID)', 'Direct Access', {
 				distinguishCancelAndClose: true,
-				confirmButtonText: 'Send',
+				confirmButtonText: 'OK',
 				cancelButtonText: 'Cancel',
 				inputPattern: /\S+/u,
 				inputErrorMessage: 'User ID is required',
@@ -5514,7 +5544,7 @@ if (window.CefSharp) {
 		$app.methods.promptWorldDialog = function () {
 			this.$prompt('Enter a World ID (UUID)', 'Direct Access', {
 				distinguishCancelAndClose: true,
-				confirmButtonText: 'Send',
+				confirmButtonText: 'OK',
 				cancelButtonText: 'Cancel',
 				inputPattern: /\S+/u,
 				inputErrorMessage: 'World ID is required',
@@ -5530,7 +5560,7 @@ if (window.CefSharp) {
 		$app.methods.promptAvatarDialog = function () {
 			this.$prompt('Enter a Avatar ID (UUID)', 'Direct Access', {
 				distinguishCancelAndClose: true,
-				confirmButtonText: 'Send',
+				confirmButtonText: 'OK',
 				cancelButtonText: 'Cancel',
 				inputPattern: /\S+/u,
 				inputErrorMessage: 'Avatar ID is required',
@@ -5789,8 +5819,8 @@ if (window.CefSharp) {
 							D.avatars.push(ref);
 						}
 					}
-					$app.sortUserDialogWorlds();
-					$app.sortUserDialogAvatars();
+					this.sortUserDialogWorlds();
+					this.sortUserDialogAvatars();
 					API.getFriendStatus({
 						userId: D.id
 					});
@@ -6228,36 +6258,37 @@ if (window.CefSharp) {
 					}
 				}
 				D.rooms = [];
-				Object.values(map).sort((a, b) => b.users.length - a.users.length || b.occupants - a.occupants).forEach((v) => {
-					var L = API.parseLocation(`${D.id}:${v.id}`);
-					v.location_ = L;
-					v.location = L.tag;
-					if (L.userId) {
-						ref = API.user[L.userId];
-						if (ref) {
-							L.user = ref;
-						} else {
-							API.getUser({
-								userId: L.userId
-							}).then((args) => {
-								this.$set(L, 'user', args.ref);
-								return args;
-							});
+				Object.values(map).sort((a, b) => b.users.length - a.users.length ||
+					b.occupants - a.occupants).forEach((v) => {
+						var L = API.parseLocation(`${D.id}:${v.id}`);
+						v.location_ = L;
+						v.location = L.tag;
+						if (L.userId) {
+							ref = API.user[L.userId];
+							if (ref) {
+								L.user = ref;
+							} else {
+								API.getUser({
+									userId: L.userId
+								}).then((args) => {
+									this.$set(L, 'user', args.ref);
+									return args;
+								});
+							}
 						}
-					}
-					v.users.sort((a, b) => {
-						var A = String(a.displayName).toUpperCase();
-						var B = String(b.displayName).toUpperCase();
-						if (A < B) {
-							return -1;
-						}
-						if (A > B) {
-							return 1;
-						}
-						return 0;
+						v.users.sort((a, b) => {
+							var A = String(a.displayName).toUpperCase();
+							var B = String(b.displayName).toUpperCase();
+							if (A < B) {
+								return -1;
+							}
+							if (A > B) {
+								return 1;
+							}
+							return 0;
+						});
+						D.rooms.push(v);
 					});
-					D.rooms.push(v);
-				});
 			}
 		};
 
@@ -6665,7 +6696,7 @@ if (window.CefSharp) {
 			$app.newInstanceDialog.visible = false;
 		});
 
-		$app.methods.buildInstanceTag = function () {
+		$app.methods.buildInstance = function () {
 			var D = this.newInstanceDialog;
 			var tags = [];
 			tags.push((99999 * Math.random() + 1).toFixed(0));
@@ -6712,7 +6743,7 @@ if (window.CefSharp) {
 				var D = this.newInstanceDialog;
 				D.worldId = L.worldId;
 				D.accessType = 'public';
-				this.buildInstanceTag();
+				this.buildInstance();
 				D.visible = true;
 			}
 		};
